@@ -1,6 +1,7 @@
+from sage.matrix.constructor import vector_on_axis_rotation_matrix
 import itertools
 
-class SeedPattern:
+class SeedPattern(SageObject):
     def __init__(self, B, D=None, t=0):
         n = B.nrows()
         if D is None:
@@ -9,12 +10,11 @@ class SeedPattern:
             raise ValueError('The input matrix "D" should be a diagonal matrix with positive integers of same size with "B".')    
         elif not((B*D).is_skew_symmetric()):
                 raise ValueError('The input matrix "B" should be a skew-symmetrizable matrix with symmetrizer "D".')
-        else:
-            self._n = n
-            self._B = B
-            self._D = D
-            self._t = t
-            self._tr = []
+        self._n = n
+        self._B = copy(B)
+        self._D = D
+        self._t = t
+        self._tr = []
 
     def rank(self):
         return self._n
@@ -22,30 +22,22 @@ class SeedPattern:
     def b_matrix(self):
         return copy(self._B)
     
-    def trace(self,t=-1):
-        if t == -1:
-            return self._tr
-        else:
-            return self._tr[t]
+    def trace(self,t):
+        return self._tr[t]
         
     def mutate(self, k):
-        n = self._n
+        self._tr.append(copy(self))
         B = self.b_matrix()
-        t = self._t
-        if not(k in range(n)):
-            raise ValueError('The input vertex is out of range.')
-        else:
-            B.mutate(k)
-            self._B = B
-            self._t = t+1
-            self._tr.append(B)
+        B.mutate(k)
+        self._B = B
+        self._t = self._t+1
     
     def E(self, k, e, t=-1):
         n = self._n
         if t == -1:
-            B = self.b_matrix()
+            B = self._B
         else:
-            B = self.trace(t)
+            B = self.trace(t)._B
         E = matrix.identity(n)
         for i in range(n):
             E[i,k] = max(-e*B[k,i], 0)
@@ -55,9 +47,9 @@ class SeedPattern:
     def E_check(self, k, e, t=-1):
         n = self._n
         if t == -1:
-            B = self.b_matrix()
+            B = self._B
         else:
-            B = self.trace(t)
+            B = self.trace(t)._B
         F = matrix.identity(n)
         for i in range(n):
             F[k,i] = max(e*B[i,k], 0)
@@ -66,7 +58,7 @@ class SeedPattern:
     
     
 
-class SignCone:
+class SignCone(SageObject):
     def __init__(self, vects, matrix, sign, perm=None):
         self._vects = vects
         self._matrix = matrix
@@ -104,10 +96,10 @@ class SignCone:
     
     
     
-class SignFan:
-    def __init__(self, B, seq, perm=None):
-        S = SeedPattern(B)
-        n = S.rank()
+class SignFan(SeedPattern):
+    def __init__(self, B, seq, perm=None, D=None):
+        super(SignFan, self).__init__(B, D)
+        n = self._n
         l = len(seq)
         if list(set(seq)) != range(n):
             print 'The input is NOT fully mutated.'
@@ -121,20 +113,14 @@ class SignFan:
                     v = [0] + (s*c._pres_mat.rows()[seq[k]]).list()
                     if Polyhedron(ieqs=(c._vects+[v])).dim() == n:
                         if k == l-1:
-                            new_cones.append(SignCone(c._vects+[v], (S.E(seq[k],s))*c._pres_mat, c._sign+[s], perm))
+                            new_cones.append(SignCone(c._vects+[v], (self.E(seq[k],s))*c._pres_mat, c._sign+[s], perm))
                         else:
-                            new_cones.append(SignCone(c._vects+[v], (S.E(seq[k],s))*c._pres_mat, c._sign+[s]))
-            S.mutate(seq[k])
+                            new_cones.append(SignCone(c._vects+[v], (self.E(seq[k],s))*c._pres_mat, c._sign+[s]))
             cones = new_cones
-        self._dim = n
-        self._B = B
-        self._seq = seq
-        self._perm = perm
-        self._seeds = S
-        self._cones = cones
-    
-    def dim(self):
-        return self._dim
+            self._seq = seq
+            self._perm = perm
+            self._cones = cones
+            self.mutate(seq[k])
 
     def base_matrix(self):
         return self._B
@@ -145,11 +131,11 @@ class SignFan:
     def permutation(self):
         return self._perm
 
-    def seed_pattern(self):
-        return self._seeds
-
     def cones(self):
         return self._cones
+    
+    def dim(self):
+        return self._n
 
     def n(self):
         return len(self._cones)
@@ -161,9 +147,23 @@ class SignFan:
             facets_list = facets_list + list(c.cone().facets())
         return list(set(facets_list))
     
+    def _facets_orderd(self):
+        l = len(self._seq)
+        facets_ord = []
+        facets = []
+        for t in range(l):
+            F = self.trace(t).facets()
+            facets_new = []
+            for f in F:
+                if not(f in facets):
+                    facets_new.append(f)
+            facets_ord.append(facets_new)
+            facets = list(itertools.chain.from_iterable(facets_ord))
+        return facets_ord
+    
     def show(self):
         F = self.cones()
-        print 'number of', self._dim, 'dimensional cones:', self._n, '\n'
+        print 'number of', self.dim(), 'dimensional cones:', self._n, '\n'
         print 'list of cones:'
         for i in range(self._n):
             print '[' + i + ']'
@@ -175,9 +175,7 @@ class SignFan:
         F = self.cones()
         return [c.sign() for c in F]
     
-    
-#------------------Stereographic projection------------------  
- 
+#------------------Stereographic projection------------------
     def project(self, basis):
         r"""
         Return the projected fan into the subspace spaned by 'basis'.
@@ -191,10 +189,6 @@ class SignFan:
                 if not(vects in new_vects_list):
                     new_vects_list.append(vects)
         self._cones = [SignCone(vects, matrix.identity(3), []) for vects in new_vects_list]
-
-    from sage.matrix.constructor import vector_on_axis_rotation_matrix
-    v = vector([1,1,1])/sqrt(3)
-    M_rot = vector_on_axis_rotation_matrix(v, 2)
     
     @staticmethod
     def _arc_mine(cent, rad, p1, p2, figsize=[4,4], axes=True, color='blue', thickness=1, hue=None):
@@ -220,7 +214,10 @@ class SignFan:
             t2 = (arctan(s2)+(pi/2)*(1-sign(s2)*sign(v2[1]))).n(110)
         else:
             s2 = (pi/2)*v2[1]
-        return arc(cent, rad, rad, sector=(t1, t2+(t1>t2)*2*pi), figsize=figsize, axes=axes, color=color, thickness=thickness, hue=hue)
+        if hue is None:
+            return arc(cent, rad, rad, sector=(t1, t2+(t1>t2)*2*pi), figsize=figsize, axes=axes, color=color, thickness=thickness)
+        else:
+            return arc(cent, rad, rad, sector=(t1, t2+(t1>t2)*2*pi), figsize=figsize, axes=axes, color=color, thickness=thickness, hue=hue)
     
     @staticmethod
     def _projector(basis, vects):
@@ -232,24 +229,45 @@ class SignFan:
             proj_vects.append([[0]+vector(v)*vector(b) for b in basis])
         return proj_vects
 
-    def plot_stereographic_projection(self, figsize=[4,4], axes=True, color='blue', thickness=1, debug=False, gradation=False):
-        if self._dim != 3:
+    def plot_stereographic_projection(self, figsize=[4,4], axes=True, color='blue', thickness=1, gradation=False, debug=False):
+        v = vector([1,1,1])/sqrt(3)
+        M_rot = vector_on_axis_rotation_matrix(v, 2)
+        if self.dim() != 3:
             raise ValueError('The input fan should be of dimension 3.')
         else:
             data = []
-            for f in self.facets():
-                i = 0
-                if len(f.rays()) == 2:
-                    data.append(f.rays())
-                else:
-                    for v in itertools.product(list(f.rays()), list(f.rays())):
-                        if (v[0] != v[1]) and (v[0] != -v[1]) and not(v[::-1] in data):
+            if gradation == False:
+                for f in self.facets():
+                    if len(f.rays()) == 2:
+                        data.append(f.rays())
+                    else:
+                        for v in itertools.product(list(f.rays()), list(f.rays())):
+                            if (v[0] != v[1]) and (v[0] != -v[1]) and not(v[::-1] in data):
+                                data.append(v)
+            else:
+                l = len(self._seq)
+                F = self._facets_orderd()
+                if debug:
+                    print l
+                    print len(F)
+                color = []
+                for t in range(l):
+                    i = 0
+                    for f in F[t]:
+                        if len(f.rays()) == 2:
+                            data.append(f.rays())
                             i = i+1
-                            data.append(v)
-#                     if debug:
-#                         if i != 0:
-#                             print i
+                        else:
+                            for v in itertools.product(list(f.rays()), list(f.rays())):
+                                if (v[0] != v[1]) and (v[0] != -v[1]) and not(v[::-1] in data):
+                                    data.append(v)
+                                    i = i+1
+                    if debug:
+                        print i
+                    color = color + [t]*i
             data_rot = []
+            if debug:
+                print 'clear.'
             for v in data:
                 n = M_rot*((v[0].cross_product(v[1])).normalized())
                 if n[2]>0:
@@ -267,7 +285,10 @@ class SignFan:
                     cent = -vector([n[0],n[1]])/n[2]
                     p1 = vector([a1[0], a1[1]])/(1-a1[2])
                     p2 = vector([a2[0], a2[1]])/(1-a2[2])
-                    plots.append(SignFan._arc_mine(cent, rad, p1, p2, figsize, axes, color, thickness))
+                    if not(gradation):
+                        plots.append(SignFan._arc_mine(cent, rad, p1, p2, figsize, axes, color, thickness))
+                    else:
+                        plots.append(SignFan._arc_mine(cent, rad, p1, p2, figsize, axes, color, thickness, hue=sin(float(color[i])/(l-1))))
                 else:
                     if a1[2] != 1:
                         p1 = vector([a1[0], a1[1]])/(1-a1[2])
@@ -282,13 +303,13 @@ class SignFan:
     
     
     
-class MutationLoop():
-    def __init__(self, B, seq, perm):
-        S = SeedPattern(B, 0)
-        n = S.rank()
+class MutationLoop(SeedPattern):
+    def __init__(self, B, seq, perm, D=None):
+        super(MutationLoop, self).__init__(B, D)
+        n = self.rank()
         for v in seq:
-            S.mutate(v)
-        B1 = S.b_matrix()
+            self.mutate(v)
+        B1 = self.b_matrix()
         PB = matrix.zero(n)
         for i in range(n):
             for j in range(n):
@@ -296,14 +317,11 @@ class MutationLoop():
         if not(PB == B):
             raise ValueError("The input is not a mutation loop.")
         else:
-            self._B = copy(B)
-            self._seeds = S
             self._seq = seq
             self._perm = perm
-            self._n = n
             
     def base_matrix(self):
-        return self._B
+        return self.trace(0).b_matrix()
             
     def rank(self):
         return self._n
@@ -319,7 +337,7 @@ class MutationLoop():
         return Permutation([p+1 for p in self._perm]).to_matrix()
     
     def inverse(self):
-        B = self._B
+        B = self.base_matrix()
         n = self._n
         perm = self._perm
         perm_inv = [perm.index(i) for i in range(n)]
@@ -497,7 +515,7 @@ class MutationLoop():
         return F
     
     def sign_fan(self):
-        return SignFan(self._B, self._seq, self._perm)
+        return SignFan(self.base_matrix(), self._seq, self._perm)
     
     def fixed_points_in_x(self, trace=False):
         r"""
