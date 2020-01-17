@@ -2,18 +2,17 @@ from sage.matrix.constructor import vector_on_axis_rotation_matrix
 import itertools
 
 class SeedPattern(SageObject):
-    def __init__(self, B, D=None, t=0):
+    def __init__(self, B, D=None):
         n = B.nrows()
         if D is None:
             D = matrix.identity(n)
         elif D.nrows() != n or D != matrix.diagonal([D[i,i] for i in range(n)]) or prod(map(lambda x: x<0, [D[i,i] for i in range(n)])):
-            raise ValueError('The input matrix "D" should be a diagonal matrix with positive integers of same size with "B".')    
+            raise ValueError('The input matrix ``D`` should be a diagonal matrix with positive integers of same size with ``B``.')    
         elif not((B*D).is_skew_symmetric()):
-                raise ValueError('The input matrix "B" should be a skew-symmetrizable matrix with symmetrizer "D".')
+                raise ValueError('The input matrix ``B`` should be a skew-symmetrizable matrix with symmetrizer ``D``.')
         self._n = n
         self._B = copy(B)
         self._D = D
-        self._t = t
         self._tr = []
 
     def rank(self):
@@ -323,9 +322,6 @@ class MutationLoop(SeedPattern):
     def base_matrix(self):
         return self.trace(0).b_matrix()
             
-    def rank(self):
-        return self._n
-            
     def show(self):
         print 'sequence of vertices:', self._seq
         print 'permutation:', self._perm
@@ -345,7 +341,7 @@ class MutationLoop(SeedPattern):
         seq_rev.reverse()
         seq_inv = [perm[v] for v in seq_rev]
         # print seq_inv, '\n', perm_inv
-        return MutationLoop(B, seq_inv, perm_inv)
+        return MutationLoop(B, seq_inv, perm_inv, self._D)
     
     def compose(self, f, show=True):
         r"""
@@ -360,8 +356,7 @@ class MutationLoop(SeedPattern):
         seq0 = f0._seq
         seq1 = f1._seq
         seq = seq0 + [perm0.index(v1) for v1 in seq1]
-        B = f0._B
-        f_comp = MutationLoop(B, seq, perm)
+        f_comp = MutationLoop(self.base_matrix(), seq, perm, self._D)
         if show:
             f_comp.show()
         return f_comp
@@ -391,17 +386,13 @@ class MutationLoop(SeedPattern):
         else:
             print 'contracted sequence of vertices:', seq_con
         self._seq = seq_con
-        S = SeedPattern(self._B, 0)
-        for v in seq_con:
-            S.mutate(v)
-        self._seeds = S
+        self = MutationLoop(self.base_matrix(), seq_con, self._perm, self._D)
     
     def deform(self, r):
-        S = self._seeds
         l = self.length()
         k_r0 = self._seq[r]
         k_r1 = self._seq[r+1]
-        B_r = S.trace(r)
+        B_r = self.trace(r).b_matrix()
         if B_r[k_r0, k_r1] == 0:
             self._seq[r] = k_r1
             self._seq[r+1] = k_r0
@@ -423,10 +414,7 @@ class MutationLoop(SeedPattern):
             print 'deformed permutation:', self._perm
         else:
             print 'Cannot deform at', r
-        S = SeedPattern(self._B, 0)
-        for v in self._seq:
-            S.mutate(v)
-        self._seeds = S
+        self = MutationLoop(self.base_matrix(), self._seq, self._perm, self._D)
     
     def x_trop_transformation(self, x):
         r"""
@@ -435,8 +423,7 @@ class MutationLoop(SeedPattern):
         INPUT:
         - ``x`` -- a point of X^trop.
         """
-        S = self._seeds
-        n = S._n
+        n = self._n
         seq = self._seq
         l = self.length()
         sign = []
@@ -444,7 +431,7 @@ class MutationLoop(SeedPattern):
         E = matrix.identity(n)
         for t in range(l):
             e = x[seq[t]].sign()
-            E_t = S.E(seq[t],e,t)
+            E_t = self.E(seq[t],e,t)
             sign.append(e)
             E = E_t*E
             x = list(E_t*vector(x))
@@ -460,8 +447,7 @@ class MutationLoop(SeedPattern):
         INPUT:
         - ``a`` -- a point of A^trop.
         """
-        S = self._seeds
-        n = S._n
+        n = self._n
         seq = self._seq
         l = self.length()
         sign = []
@@ -469,7 +455,7 @@ class MutationLoop(SeedPattern):
         F = matrix.identity(n)
         for t in range(l):
             e = ((vector(a))*B)[seq[t]].sign()
-            F_t = S.E_check(seq[t],e,t)
+            F_t = self.E_check(seq[t],e,t)
             sign.append(e)
             F = F_t*F
             a = list(F_t*vector(a))
@@ -485,13 +471,12 @@ class MutationLoop(SeedPattern):
         INPUT:
         - ``sign`` -- a sequence of signs.
         """
-        S = self._seeds
-        n = S._n
+        n = self._n
         seq = self._seq
         P = self.perm_matrix()
         E = matrix.identity(n)
         for t in range(self.length()):
-            E_t = S.E(seq[t],sign[t],t)
+            E_t = self.E(seq[t],sign[t],t)
             E = E_t*E
         E = P*E
         return E
@@ -503,13 +488,12 @@ class MutationLoop(SeedPattern):
         INPUT:
         - ``sign`` -- a sequence of signs.
         """
-        S = self._seeds
-        n = S._n
+        n = self._n
         seq = self._seq
         P = self.perm_matrix()
         F = matrix.identity(n)
         for t in range(self.length()):
-            F_t = S.E_check(seq[t],sign[t],t)
+            F_t = self.E_check(seq[t],sign[t],t)
             F = F_t*F
         F = P*F
         return F
@@ -630,7 +614,8 @@ class MutationLoop(SeedPattern):
         return self.x_trop_transformation([1]*self._n)[1]
 
     def G_matrix(self):
-        return ((self.C_matrix())^-1).transpose()
+        D = self._D
+        return D*(((self.C_matrix())^-1).transpose())*(D^-1)
     
     def trop_sign(self):
         return self.x_trop_transformation([1]*self._n)[2]
