@@ -29,7 +29,6 @@ class SeedPattern(SageObject):
         B = self.b_matrix()
         B.mutate(k)
         self._B = B
-        self._t = self._t+1
     
     def E(self, k, e, t=-1):
         n = self._n
