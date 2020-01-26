@@ -92,19 +92,28 @@ class SignCone(SageObject):
     def presentation_matrix(self):
         return self._pres_mat
     
+    def is_invariant(self, f):
+        C = self.cone()
+        rays = [list(v) for v in C.rays()]
+        return all(map(lambda x: f.x_trop_transformation(x)[0] in C, rays))
+        
+    def show(self):
+        print 'rays:', self.rays()
+        print 'presentation matrix: \n', self._pres_mat
+    
     
     
 class SignFan(SeedPattern):
-    def __init__(self, B, seq, perm=None, D=None):
+    def __init__(self, B, seq, perm=None, D=None, mentions=True):
         super(SignFan, self).__init__(B, D)
         n = self._n
         l = len(seq)
-        if list(set(seq)) != range(n):
+        if list(set(seq)) != range(n) and mentions:
             print 'The input is NOT fully mutated.'
         cones = [SignCone([], matrix.identity(n), [])]  # list of sign cones.
         for k in range(l):
             new_cones = []
-            if k >= 9:
+            if k >= 9 and mentions:
                 print 'now calculating', k+1 ,'th mutation'
             for c in cones:
                 for s in [1,-1]:
@@ -129,7 +138,7 @@ class SignFan(SeedPattern):
     def permutation(self):
         return self._perm
 
-    def cones(self):
+    def sign_cones(self):
         return self._cones
     
     def dim(self):
@@ -360,11 +369,12 @@ class MutationLoop(SeedPattern):
             f_comp.show()
         return f_comp
          
-    def iterate(self, m):
+    def iterate(self, m, show=True):
         f = copy(self)
         for i in range(m-1):
             f = f.compose(self, show=False)
-        f.show()
+        if show:
+            f.show()
         return f
     
     def contract(self):
@@ -463,7 +473,7 @@ class MutationLoop(SeedPattern):
         a = list(P*vector(a))
         return a, F, sign
     
-    def E(self, sign):
+    def x_presentation_matrix(self, sign):
         r"""
         Return the presentation matrix of signed tropical X-transformation associated to the input sign.
         
@@ -480,7 +490,7 @@ class MutationLoop(SeedPattern):
         E = P*E
         return E
         
-    def E_check(self, sign):
+    def a_presentation_matrix(self, sign):
         r"""
         Return the presentation matrix of signed tropical A-transformation associated to the input sign.
         
@@ -497,8 +507,8 @@ class MutationLoop(SeedPattern):
         F = P*F
         return F
     
-    def sign_fan(self):
-        return SignFan(self.base_matrix(), self._seq, self._perm)
+    def sign_fan(self, mentions=True):
+        return SignFan(self.base_matrix(), self._seq, self._perm, mentions=mentions)
     
     def fixed_points_in_x(self, trace=False):
         r"""
@@ -533,14 +543,32 @@ class MutationLoop(SeedPattern):
                 pts_uniq.append(x)
         return pts_uniq
     
-    def itarated_trial_in_x(self, x, m, trace=False, err=10^-4):
+    def invariant_cones(self, M, show=True, mentions=True):
+        inv_cones = []
+        F = self.iterate(M, show=False).sign_fan(mentions)
+        cones = F.sign_cones()
+        for c in cones:
+            if c.is_invariant(self):
+                inv_cones.append(c)
+        if inv_cones == [] and mentions:
+            print 'There is no invariant cone in sign fan of self^' + str(M) + '.'
+        else:
+            if show:
+                print 'Find the invariant cones:'
+                for i in range(len(inv_cones)):
+                    print '[' + str(i+1) + ']:'
+                    inv_cones[i].show()
+                    print '\n'
+        return inv_cones
+    
+    def itarated_trial_in_x(self, x, m=100, trace=False, err=10^-4):
         r"""
         This method is an itarated trial in PX^trop.
         If 'x' is converging to a point, then return the sign at the point.
         
         INPUT:
         - ``x`` -- a point in X^trop
-        - ``m`` -- a number of times to hit
+        - ``m`` -- (default: 100) a number of times to hit
         - ``trace`` -- bool(default: ``False``); whether print coordinates and signs during ``x`` is wandering
         - ``err`` -- arrowable error (default: 10^-4)
         """
@@ -609,19 +637,61 @@ class MutationLoop(SeedPattern):
             print 'eigen value=',lyap, '\n', 'eigen vector=', eigen_vect
             return data[2]
     
-    def C_matrix(self):
+    def c_matrix(self):
         return self.x_trop_transformation([1]*self._n)[1]
 
-    def G_matrix(self):
+    def g_matrix(self):
         D = self._D
-        return D*(((self.C_matrix())^-1).transpose())*(D^-1)
+        return D*(((self.c_matrix())^-1).transpose())*(D^-1)
     
     def trop_sign(self):
         return self.x_trop_transformation([1]*self._n)[2]
     
     def is_equivalent_to(self, f):
-        return self.C_matrix == f.C_matrix()
+        return self.c_matrix() == f.c_matrix()
+    
+    def is_sign_stable(self, rays, M=5, m=50, lim_cone=False, mentions=True):
+        C = Cone(rays)
+        if not(C.is_strictly_convex()):
+            raise ValueError('The input should be strictly convex.')
+        rays = [list(v) for v in C.rays()]
+        for r in range(M):
+            inv_sign_cones = self.invariant_cones(r+1, show=False, mentions=False)
+            if inv_sign_cones != []:
+                inv_cones = [c.cone() for c in inv_sign_cones]
+                flag = [False for v in rays]
+                ind = []
+                j = 0
+                for v in rays:
+                    for i in range(m):
+                        v = self.x_trop_transformation(v)[0]
+                        conv_to = [v in c for c in inv_cones]
+                        if any(conv_to):
+                            ind.append(conv_to.index(True))
+                            flag[j] = True
+                            break
+                    j += 1
+                index = ind[0]
+                if all(flag) and all(map(lambda x : x == index, ind)):
+                    if not(lim_cone):
+                        return True
+                    else:
+                        return inv_sign_cones[index]
+        if mentions:
+            print 'May self is NOT sign stable on the cone of the input rays.'
+        return False
         
+    def is_basic_sign_stable(self, M=5, m=50):
+        n = self._n
+        for r in range(M):
+            flag_p = self.is_sign_stable([matrix.identity(n).rows()[i] for i in range(n)], r+1, m, lim_cone=True, mentions=False)
+            flag_m = self.is_sign_stable([-matrix.identity(n).rows()[i] for i in range(n)], r+1, m, lim_cone=True, mentions=False)
+            if (flag_p is not False) and (flag_m is not False):
+                return max([x.abs() for x in flag_p.presentation_matrix().eigenvalues()]) == max([x.abs() for x in flag_m.presentation_matrix().eigenvalues()])
+        print 'May self is NOT sign stable on the cone of the input rays.'
+            
+        
+            
 
 #---------------------Other functions---------------------
         
