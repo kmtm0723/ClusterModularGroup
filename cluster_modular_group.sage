@@ -18,8 +18,11 @@ class SeedPattern(SageObject):
     def rank(self):
         return self._n
 
-    def b_matrix(self):
-        return copy(self._B)
+    def b_matrix(self, t=-1):
+        if t == -1:
+            return copy(self._B)
+        else:
+            return copy(self.trace(t)._B)
     
     def trace(self,t):
         return self._tr[t]
@@ -74,9 +77,6 @@ class SignCone(SageObject):
     
     def dim(self):
         return self.cone().dim()
-
-    def codim(self):
-        return self._n - self.dim()
     
     def normal_vectors(self):
         c = self.cone()
@@ -463,7 +463,7 @@ class MutationLoop(SeedPattern):
         P = self.perm_matrix()
         F = matrix.identity(n)
         for t in range(l):
-            e = ((vector(a))*B)[seq[t]].sign()
+            e = ((vector(a))*self.b_matrix(t))[seq[t]].sign()
             F_t = self.E_check(seq[t],e,t)
             sign.append(e)
             F = F_t*F
@@ -561,7 +561,7 @@ class MutationLoop(SeedPattern):
                     print '\n'
         return inv_cones
     
-    def itarated_trial_in_x(self, x, m=100, trace=False, err=10^-4):
+    def iterated_trial_in_x(self, x, m=100, trace=False, err=10^-4):
         r"""
         This method is an itarated trial in PX^trop.
         If 'x' is converging to a point, then return the sign at the point.
@@ -591,7 +591,7 @@ class MutationLoop(SeedPattern):
             if not(trace):
                 print x
         else:
-            eigen_vects = data[1].eigenvectors_left()
+            eigen_vects = data[1].eigenvectors_right()
             eigen_vals = [eigen_vects[l][0] for l in range(len(eigen_vects))]
             lyap = max(v.abs() for v in eigen_vals)
             lyap_index = eigen_vals.index(lyap or -lyap)
@@ -599,7 +599,7 @@ class MutationLoop(SeedPattern):
             print 'eigen value=',lyap, '\n', 'eigen vector=', eigen_vect
             return data[2]
         
-    def itarated_trial_in_a(self, a, m, trace=False, err=10^-4):
+    def iterated_trial_in_a(self, a, m=100, trace=False, err=10^-4):
         r"""
         This method is an itarated trial in PA^trop.
         If 'a' is converging to a point, then return the sign at the point.
@@ -629,7 +629,7 @@ class MutationLoop(SeedPattern):
             if not(trace):
                 print a
         else:
-            eigen_vects = data[1].eigenvectors_left()
+            eigen_vects = data[1].eigenvectors_right()
             eigen_vals = [eigen_vects[l][0] for l in range(len(eigen_vects))]
             lyap = max(v.abs() for v in eigen_vals)
             lyap_index = eigen_vals.index(lyap or -lyap)
