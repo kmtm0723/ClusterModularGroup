@@ -355,19 +355,22 @@ class MutationLoop(SeedPattern):
         r"""
         Retrun the mutation loop as ``f*self``.
         """
-        f0 = self
-        f1 = f
-        n = f0._n
-        perm0 = f0._perm
-        perm1 = f1._perm
-        perm = [perm1[perm0[i]] for i in range(n)]
-        seq0 = f0._seq
-        seq1 = f1._seq
-        seq = seq0 + [perm0.index(v1) for v1 in seq1]
-        f_comp = MutationLoop(self.base_matrix(), seq, perm, self._D)
-        if show:
-            f_comp.show()
-        return f_comp
+        if self.base_matrix() != f.base_matrix():
+            raise ValueError('The input should be have the same base matrix to self.')
+        else:
+            f0 = self
+            f1 = f
+            n = f0._n
+            perm0 = f0._perm
+            perm1 = f1._perm
+            perm = [perm1[perm0[i]] for i in range(n)]
+            seq0 = f0._seq
+            seq1 = f1._seq
+            seq = seq0 + [perm0.index(v1) for v1 in seq1]
+            f_comp = MutationLoop(self.base_matrix(), seq, perm, self._D)
+            if show:
+                f_comp.show()
+            return f_comp
          
     def iterate(self, m, show=True):
         f = copy(self)
@@ -395,13 +398,17 @@ class MutationLoop(SeedPattern):
         else:
             print 'contracted sequence of vertices:', seq_con
         self._seq = seq_con
-        self = MutationLoop(self.base_matrix(), seq_con, self._perm, self._D)
+        self._tr = []
+        for v in self._seq:
+            self.mutate(v)
     
     def deform(self, r):
+        if not(self.base_matrix().is_skew_symmetric()):
+            raise ValueError('The method deform supported for only skew-symmetric case, sorry.')
         l = self.length()
         k_r0 = self._seq[r]
         k_r1 = self._seq[r+1]
-        B_r = self.trace(r).b_matrix()
+        B_r = self.b_matrix(r)
         if B_r[k_r0, k_r1] == 0:
             self._seq[r] = k_r1
             self._seq[r+1] = k_r0
@@ -423,7 +430,9 @@ class MutationLoop(SeedPattern):
             print 'deformed permutation:', self._perm
         else:
             print 'Cannot deform at', r
-        self = MutationLoop(self.base_matrix(), self._seq, self._perm, self._D)
+        self._tr = []
+        for v in self._seq:
+            self.mutate(v)
     
     def x_trop_transformation(self, x):
         r"""
@@ -648,7 +657,10 @@ class MutationLoop(SeedPattern):
         return self.x_trop_transformation([1]*self._n)[2]
     
     def is_equivalent_to(self, f):
-        return self.c_matrix() == f.c_matrix()
+        if self.base_matrix() != f.base_matrix():
+            raise ValueError('The input should be have the same base matrix to self.')
+        else:
+            return self.c_matrix() == f.c_matrix()
     
     def is_sign_stable(self, rays, M=5, m=50, lim_cone=False, mentions=True):
         C = Cone(rays)
