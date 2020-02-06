@@ -690,17 +690,47 @@ class MutationLoop(SeedPattern):
                     else:
                         return inv_sign_cones[index]
         if mentions:
-            print 'May self is NOT sign stable on the cone of the input rays.'
+            print 'May self is NOT sign-stable on the cone of the input rays.'
         return False
         
     def is_basic_sign_stable(self, M=5, m=50):
         n = self._n
+        rays_p = [matrix.identity(n).rows()[i] for i in range(n)]
+        rays_m = [-matrix.identity(n).rows()[i] for i in range(n)]
         for r in range(M):
-            flag_p = self.is_sign_stable([matrix.identity(n).rows()[i] for i in range(n)], r+1, m, lim_cone=True, mentions=False)
-            flag_m = self.is_sign_stable([-matrix.identity(n).rows()[i] for i in range(n)], r+1, m, lim_cone=True, mentions=False)
-            if (flag_p is not False) and (flag_m is not False):
-                return max([x.abs() for x in flag_p.presentation_matrix().eigenvalues()]) == max([x.abs() for x in flag_m.presentation_matrix().eigenvalues()])
-        print 'May self is NOT sign stable on the cone of the input rays.'
+            inv_sign_cones = self.invariant_cones(r+1, show=False, mentions=False)
+            print inv_sign_cones
+            if inv_sign_cones != []:
+                inv_cones = [c.cone() for c in inv_sign_cones]
+                flag_p = [False for v in rays_p]
+                flag_m = [False for v in rays_m]
+                ind_p, ind_m = [], []
+                j = 0
+                for v in rays_p:
+                    for i in range(m):
+                        v = self.x_trop_transformation(v)[0]
+                        conv_to = [v in c for c in inv_cones]
+                        if any(conv_to):
+                            ind_p.append(conv_to.index(True))
+                            flag_p[j] = True
+                            break
+                    j += 1
+                index_p = ind_p[0]
+                for v in rays_m:
+                    for i in range(m):
+                        v = self.x_trop_transformation(v)[0]
+                        conv_to = [v in c for c in inv_cones]
+                        if any(conv_to):
+                            ind_m.append(conv_to.index(True))
+                            flag_m[j] = True
+                            break
+                    j += 1
+                index_m = ind_m[0]
+                if all(flag_p) and all(flag_m) and all(map(lambda x : x == index, ind)):
+                    if max([x.abs() for x in inv_sign_cones[index_p].presentation_matrix().eigenvalues()]) - max([x.abs() for x in inv_sign_cones[index_p].presentation_matrix().eigenvalues()]) < 10^-5:
+                        return True
+        if mentions:
+            print 'May self is NOT basic sign-stable.'
             
         
             
