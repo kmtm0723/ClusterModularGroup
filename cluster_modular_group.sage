@@ -473,8 +473,10 @@ class MutationLoop(SeedPattern):
         F = matrix.identity(n)
         for t in range(l):
             e = ((vector(a))*self.b_matrix(t))[seq[t]].sign()
-            F_t = self.E_check(seq[t],e,t)
             sign.append(e)
+            if e == 0:
+                e = 1
+            F_t = self.E_check(seq[t],e,t)
             F = F_t*F
             a = list(F_t*vector(a))
         F = P*F
