@@ -729,8 +729,7 @@ class MutationLoop(SeedPattern):
                 if all(flag_p) and all(flag_m) and all(map(lambda x : x == index, ind)):
                     if max([x.abs() for x in inv_sign_cones[index_p].presentation_matrix().eigenvalues()]) - max([x.abs() for x in inv_sign_cones[index_p].presentation_matrix().eigenvalues()]) < 10^-5:
                         return True
-        if mentions:
-            print 'May self is NOT basic sign-stable.'
+        print 'May self is NOT basic sign-stable.'
             
         
             
