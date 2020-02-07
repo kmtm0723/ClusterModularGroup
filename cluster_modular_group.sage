@@ -610,6 +610,18 @@ class MutationLoop(SeedPattern):
             print 'eigen value=',lyap, '\n', 'eigen vector=', eigen_vect
             return data[2]
         
+    def _may_conv_in_x(self, x, m=100, err=10^-4):
+        f = self
+        x = vector(x).normalized().n().list()
+        for i in range(m):
+            x_before = x
+            data = f.x_trop_transformation(x_before)
+            x = vector(data[0]).normalized().n().list()
+            x_diff = list(vector(x) - vector(x_before))
+            if all(map(lambda x:x.abs()<err, x_diff)):
+                return x
+        return False
+        
     def iterated_trial_in_a(self, a, m=100, trace=False, err=10^-4):
         r"""
         This method is an itarated trial in PA^trop.
@@ -665,6 +677,37 @@ class MutationLoop(SeedPattern):
             return self.c_matrix() == f.c_matrix()
     
     def is_sign_stable(self, rays, M=5, m=50, lim_cone=False, mentions=True):
+        C = Cone(rays)
+        if not(C.is_strictly_convex()):
+            raise ValueError('The input should be strictly convex.')
+        rays = [list(v) for v in C.rays()]
+        for r in range(M):
+            inv_sign_cones = self.invariant_cones(r+1, show=False, mentions=False)
+            if inv_sign_cones != []:
+                inv_cones = [c.cone() for c in inv_sign_cones]
+                flag = [False for v in rays]
+                ind = []
+                j = 0
+                for v in rays:
+                    for i in range(m):
+                        v = self.x_trop_transformation(v)[0]
+                        conv_to = [v in c for c in inv_cones]
+                        if any(conv_to):
+                            ind.append(conv_to.index(True))
+                            flag[j] = True
+                            break
+                    j += 1
+                index = ind[0]
+                if all(flag) and all(map(lambda x : x == index, ind)):
+                    if not(lim_cone):
+                        return True
+                    else:
+                        return inv_sign_cones[index]
+        if mentions:
+            print 'May self is NOT sign-stable on the cone of the input rays.'
+        return False
+    
+    def is_sign_stable_beta(self, rays, m=50, lim_cone=False, mentions=True):
         C = Cone(rays)
         if not(C.is_strictly_convex()):
             raise ValueError('The input should be strictly convex.')
