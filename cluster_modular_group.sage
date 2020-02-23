@@ -398,6 +398,7 @@ class MutationLoop(SeedPattern):
         else:
             print 'contracted sequence of vertices:', seq_con
         self._seq = seq_con
+        self._B = self.base_matrix()
         self._tr = []
         for v in self._seq:
             self.mutate(v)
@@ -430,6 +431,7 @@ class MutationLoop(SeedPattern):
             print 'deformed permutation:', self._perm
         else:
             print 'Cannot deform at', r
+        self._B = self.base_matrix()
         self._tr = []
         for v in self._seq:
             self.mutate(v)
@@ -444,19 +446,19 @@ class MutationLoop(SeedPattern):
         n = self._n
         seq = self._seq
         l = self.length()
-        sign = []
+        signs = []
         P = self.perm_matrix()
         E = matrix.identity(n)
         for t in range(l):
-            e = x[seq[t]].sign()
+            e = sign(x[seq[t]])
             E_t = self.E(seq[t],e,t)
-            sign.append(e)
+            signs.append(e)
             E = E_t*E
             x = list(E_t*vector(x))
         E = P*E
         ## this E is the presentation matrix at 'x'.)
         x = list(P*vector(x))
-        return x, E, sign
+        return x, E, signs
     
     def a_trop_transformation(self, a):
         r"""
@@ -468,12 +470,12 @@ class MutationLoop(SeedPattern):
         n = self._n
         seq = self._seq
         l = self.length()
-        sign = []
+        signs = []
         P = self.perm_matrix()
         F = matrix.identity(n)
         for t in range(l):
-            e = ((vector(a))*self.b_matrix(t))[seq[t]].sign()
-            sign.append(e)
+            e = sign(((vector(a))*self.b_matrix(t))[seq[t]])
+            signs.append(e)
             if e == 0:
                 e = 1
             F_t = self.E_check(seq[t],e,t)
@@ -482,7 +484,7 @@ class MutationLoop(SeedPattern):
         F = P*F
         ## this F is the presentation matrix at 'a'.)
         a = list(P*vector(a))
-        return a, F, sign
+        return a, F, signs
     
     def x_presentation_matrix(self, sign):
         r"""
@@ -607,7 +609,12 @@ class MutationLoop(SeedPattern):
             lyap = max(v.abs() for v in eigen_vals)
             lyap_index = eigen_vals.index(lyap or -lyap)
             eigen_vect = eigen_vects[lyap_index][1][0].normalized().n().list()
-            print 'eigen value=',lyap, '\n', 'eigen vector=', eigen_vect
+            check_p = list(vector(eigen_vect) - vector(f.x_trop_transformation(eigen_vect)[0]).normalized().n())
+            check_m = list(-vector(eigen_vect) - vector(f.x_trop_transformation(list(-vector(eigen_vect)))[0]).normalized().n())
+            if all(map(lambda x:x.abs()<err, check_p)):
+                print 'eigen value=',lyap, '\n', 'eigen vector=', eigen_vect
+            elif all(map(lambda x:x.abs()<err, check_m)):
+                print 'eigen value=',lyap, '\n', 'eigen vector=', list(-vector(eigen_vect))
             return data[2]
         
     def _may_conv_in_x(self, x, m=100, err=10^-4):
@@ -707,36 +714,20 @@ class MutationLoop(SeedPattern):
             print 'May self is NOT sign-stable on the cone of the input rays.'
         return False
     
-    def is_sign_stable_beta(self, rays, m=50, lim_cone=False, mentions=True):
+    def may_be_sign_stable(self, rays, m=50, lim_cone=False, mentions=True, detail=False):
         C = Cone(rays)
         if not(C.is_strictly_convex()):
             raise ValueError('The input should be strictly convex.')
         rays = [list(v) for v in C.rays()]
-        for r in range(M):
-            inv_sign_cones = self.invariant_cones(r+1, show=False, mentions=False)
-            if inv_sign_cones != []:
-                inv_cones = [c.cone() for c in inv_sign_cones]
-                flag = [False for v in rays]
-                ind = []
-                j = 0
-                for v in rays:
-                    for i in range(m):
-                        v = self.x_trop_transformation(v)[0]
-                        conv_to = [v in c for c in inv_cones]
-                        if any(conv_to):
-                            ind.append(conv_to.index(True))
-                            flag[j] = True
-                            break
-                    j += 1
-                index = ind[0]
-                if all(flag) and all(map(lambda x : x == index, ind)):
-                    if not(lim_cone):
-                        return True
-                    else:
-                        return inv_sign_cones[index]
-        if mentions:
-            print 'May self is NOT sign-stable on the cone of the input rays.'
-        return False
+        conv_cand = [self._may_conv_in_x(ray, m, err=10^-6) for ray in rays]
+        ray_diff = [list(vector(conv_cand[i]) - vector(conv_cand[i+1])) for i in range(len(rays)-1)]
+        if all([all(map(lambda x:x.abs()<10^-2, diff)) for diff in ray_diff]):
+            if detail:
+                return conv_cand[0]
+            else:
+                return True
+        else:
+            return False
         
     def is_basic_sign_stable(self, M=5, m=50):
         n = self._n
@@ -744,7 +735,7 @@ class MutationLoop(SeedPattern):
         rays_m = [-matrix.identity(n).rows()[i] for i in range(n)]
         for r in range(M):
             inv_sign_cones = self.invariant_cones(r+1, show=False, mentions=False)
-            print inv_sign_cones
+            # print inv_sign_cones
             if inv_sign_cones != []:
                 inv_cones = [c.cone() for c in inv_sign_cones]
                 flag_p = [False for v in rays_p]
@@ -774,9 +765,25 @@ class MutationLoop(SeedPattern):
                 if all(flag_p) and all(flag_m) and all(map(lambda x : x == index, ind)):
                     if max([x.abs() for x in inv_sign_cones[index_p].presentation_matrix().eigenvalues()]) - max([x.abs() for x in inv_sign_cones[index_p].presentation_matrix().eigenvalues()]) < 10^-5:
                         return True
-        print 'May self is NOT basic sign-stable.'
+        print '``self`` may be NOT basic sign-stable.'
             
-        
+    def may_be_basic_sign_stable(self, m=50):
+        n = self._n
+        rays_p = [matrix.identity(n).rows()[i] for i in range(n)]
+        rays_m = [-matrix.identity(n).rows()[i] for i in range(n)]
+        x_p = self.may_be_sign_stable(rays_p, detail=True)
+        x_m = self.may_be_sign_stable(rays_m, detail=True)
+        if x_p is not False and x_m is not False:
+            x_p = self.x_trop_transformation(x_p)
+            x_m = self.x_trop_transformation(x_m)
+            if (max([v.abs().n() for v in x_p[1].eigenvalues()]) - max([v.abs().n() for v in x_m[1].eigenvalues()])).abs() < 10^-3:
+                if x_p[2] == x_m[2]:
+                    print '``self`` may be sign stable on C^+ cup C^-.'
+                else:
+                    print '``self`` may be two-sided sign stable.'
+                return True
+        else:
+            return False
             
 
 #---------------------Other functions---------------------
