@@ -62,6 +62,7 @@ class SeedPattern(SageObject):
 class SignCone(SageObject):
     def __init__(self, vects, matrix, sign, perm=None):
         self._vects = vects
+        self._ieqs = [[0]+v for v in vects]
         self._matrix = matrix
         if perm is None:
             self._pres_mat = matrix
@@ -73,7 +74,7 @@ class SignCone(SageObject):
         self._n = matrix.nrows()
     
     def cone(self):
-        return Cone(Polyhedron(ieqs=self._vects))
+        return Cone(Polyhedron(ieqs=self._ieqs))
     
     def dim(self):
         return self.cone().dim()
@@ -117,8 +118,8 @@ class SignFan(SeedPattern):
                 print 'now calculating', k+1 ,'th mutation'
             for c in cones:
                 for s in [1,-1]:
-                    v = [0] + (s*c._pres_mat.rows()[seq[k]]).list()
-                    if Polyhedron(ieqs=(c._vects+[v])).dim() == n:
+                    v = (s*c._pres_mat.rows()[seq[k]]).list()
+                    if Polyhedron(ieqs=(c._ieqs+[[0]+v])).dim() == n:
                         if k == l-1:
                             new_cones.append(SignCone(c._vects+[v], (self.E(seq[k],s))*c._pres_mat, c._sign+[s], perm))
                         else:
@@ -141,6 +142,9 @@ class SignFan(SeedPattern):
     def sign_cones(self):
         return self._cones
     
+    def cones(self):
+        return [c.cone() for c in self._cones]
+    
     def dim(self):
         return self._n
 
@@ -148,7 +152,7 @@ class SignFan(SeedPattern):
         return len(self._cones)
     
     def facets(self):
-        cones = self.cones()
+        cones = self._cones
         facets_list = []
         for c in cones:
             facets_list = facets_list + list(c.cone().facets())
@@ -169,17 +173,17 @@ class SignFan(SeedPattern):
         return facets_ord
     
     def show(self):
-        F = self.cones()
-        print 'number of', self.dim(), 'dimensional cones:', self._n, '\n'
+        F = self._cones
+        print 'number of', self.dim(), 'dimensional cones:', self.n(), '\n'
         print 'list of cones:'
-        for i in range(self._n):
-            print '[' + i + ']'
+        for i in range(self.n()):
+            print '[' , i , ']'
             print 'sign:', F[i].sign()
             print 'rays:', F[i].rays()
             print 'presentation matrix:', '\n', F[i].presentation_matrix(), '\n'
             
     def sings(self):
-        F = self.cones()
+        F = self._cones
         return [c.sign() for c in F]
     
 #------------------Stereographic projection------------------
@@ -486,7 +490,7 @@ class MutationLoop(SeedPattern):
         a = list(P*vector(a))
         return a, F, signs
     
-    def x_presentation_matrix(self, sign):
+    def E_matrix(self, sign):
         r"""
         Return the presentation matrix of signed tropical X-transformation associated to the input sign.
         
@@ -503,7 +507,7 @@ class MutationLoop(SeedPattern):
         E = P*E
         return E
         
-    def a_presentation_matrix(self, sign):
+    def E_check_matrix(self, sign):
         r"""
         Return the presentation matrix of signed tropical A-transformation associated to the input sign.
         
@@ -539,7 +543,7 @@ class MutationLoop(SeedPattern):
         for c in F:
             if trace:
                 print c._sign
-            P = Polyhedron(ieqs=c._vects)
+            P = Polyhedron(ieqs=c._ieqs)
             E = c._pres_mat
             for v in E.eigenvectors_right():
                 if (v[0] in RR) and (v[0] > 0):
@@ -574,7 +578,7 @@ class MutationLoop(SeedPattern):
                     print '\n'
         return inv_cones
     
-    def iterated_trial_in_x(self, x, m=100, trace=False, err=10^-4):
+    def iterated_trial_in_x(self, x, m=100, trace=False, err=10^-4, pm=False):
         r"""
         This method is an itarated trial in PX^trop.
         If 'x' is converging to a point, then return the sign at the point.
@@ -592,7 +596,11 @@ class MutationLoop(SeedPattern):
             data = f.x_trop_transformation(x_before)
             x = vector(data[0]).normalized().n().list()
             if trace:
-                print '[', i+1, '] \n', 'x=', x, '\n', 'sign:', data[2], '\n' #, data[1], '\n'
+                print '[', i+1, ']'
+                if not(pm):
+                    print 'x=', x, '\n', 'sign:', data[2], '\n' #, data[1], '\n'
+                else:
+                    print 'x=', x, '\n', 'sign:', pm_conv(data[2]), '\n' #, data[1], '\n'
             x_diff = list(vector(x) - vector(x_before))
             if all(map(lambda x:x.abs()<err, x_diff)):
                 if trace:
@@ -683,7 +691,17 @@ class MutationLoop(SeedPattern):
         else:
             return self.c_matrix() == f.c_matrix()
     
-    def is_sign_stable(self, rays, M=5, m=50, lim_cone=False, mentions=True):
+    def _is_sign_stable(self, rays, M=5, m=50, lim_cone=False, mentions=True):
+        r"""
+        Check ``self`` is sign-stable on the given cone.
+        That is, carry out the 'inductive check method' in the range of ``M`` times. (cf. [IK, Section 5.1](https://arxiv.org/pdf/1911.07587.pdf))
+
+        INPUT:
+        - ``rays`` -- a list of (list of) vectors in ``RR^self.n()`` generates a strictry convex cone
+        - ``M`` -- (default: ``5``); a positive integer; the range of the induction method
+        - ``m`` -- (default: ``50``); a positive integer; the range of the time to chasing the movement of the rays
+        - ``mentions`` -- (default: ``True``); if ``True``, print some mentions; if you are worrywart, we recommend to input as ``True``
+        """       
         C = Cone(rays)
         if not(C.is_strictly_convex()):
             raise ValueError('The input should be strictly convex.')
@@ -695,6 +713,7 @@ class MutationLoop(SeedPattern):
                 flag = [False for v in rays]
                 ind = []
                 j = 0
+                F = self.sign_fan().cones()
                 for v in rays:
                     for i in range(m):
                         v = self.x_trop_transformation(v)[0]
@@ -714,7 +733,7 @@ class MutationLoop(SeedPattern):
             print 'May self is NOT sign-stable on the cone of the input rays.'
         return False
     
-    def may_be_sign_stable(self, rays, m=50, lim_cone=False, mentions=True, detail=False):
+    def _may_be_sign_stable(self, rays, m=50, lim_cone=False, mentions=True, detail=False):
         C = Cone(rays)
         if not(C.is_strictly_convex()):
             raise ValueError('The input should be strictly convex.')
@@ -789,10 +808,62 @@ class MutationLoop(SeedPattern):
 #---------------------Other functions---------------------
         
 def sign(x):
-    if x>0:
-        return 1
-    if x==0:
+    err = 10^-10
+    if x.abs() < err:
         return 0
-    if x<0:
+    elif x>0:
+        return 1
+    elif x<0:
         return -1
-        
+
+# def Signs(l, zero = False): ## Return the list of signs of length ''l''.
+#     signs = []
+#     index = list(powerset(range(l)))
+#     if not(zero):
+#         for i in range(2^l):
+#             sign = []
+#             for j in range(l):
+#                 if j in set(index[i]):
+#                     sign.append(-1)
+#                 else:
+#                     sign.append(1)
+#             signs.append(sign)
+#     return signs
+
+def Signs(l, zero = True): ## Return the list of signs of length ''l''.
+    if zero:
+        p = 3
+        sgn = [1, -1, 0]
+    else:
+        p = 2
+        sgn = [1,-1]
+    signs = []
+    for x in range(p^l):
+        expand = []
+        for i in range(l):
+            a = x%p
+            expand.append(a)
+            if x-a != 0:
+                x = (x-a)/p
+            else:
+                x=0
+        sg = [sgn[s] for s in expand]
+        sg.reverse()
+        signs.append(sg)
+    return signs
+
+def pm(x):
+    if x == 1:
+        return '+'
+    if x == -1:
+        return '-'
+    if x == 0:
+        return '0'
+
+def pm_conv(sgn):
+    sgn_str = '('
+    for i in range(len(sgn)):
+        sgn_str = sgn_str + pm(sgn[i]) + ','
+    sgn_str = sgn_str.strip(',')
+    sgn_str = sgn_str + ')'
+    return sgn_str
